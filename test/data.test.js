@@ -72,3 +72,43 @@ test('getSpend: only fetches missing days and reports failures', async () => {
   const g = await getSpend('google', '2025-01-01', '2025-01-03');
   assert.match(g.error, /quota.*3 of 3 days missing/);
 });
+
+test('getCityMap: Zoho mapping when available, built-in mapping on failure, never throws', async () => {
+  const axios = require('axios');
+  const realGet = axios.get;
+  const zohoReply = (rows) => ({ data: { details: { output: JSON.stringify({ rows }) } } });
+  try {
+    delete process.env.ZOHO_CITY_MAPPING_API;
+    delete require.cache[require.resolve('../lib/data')];
+    let { getCityMap } = require('../lib/data');
+    assert.strictEqual((await getCityMap()).map.source, 'default'); // not configured
+
+    process.env.ZOHO_CITY_MAPPING_API = 'https://example.test/mapping';
+    clearCache();
+    delete require.cache[require.resolve('../lib/data')];
+    ({ getCityMap } = require('../lib/data'));
+    axios.get = async () => { throw new Error('timeout'); };
+    let r = await getCityMap();
+    assert.strictEqual(r.map.source, 'default');
+    assert.match(r.error, /built-in mapping/);
+
+    let calls = 0;
+    axios.get = async () => { calls++; return zohoReply([{ assignee: 'shreya shreya', city: 'Hosur', from: '2020-01-01' }]); };
+    r = await getCityMap(); // within the retry pause: no call, still the built-in mapping
+    assert.strictEqual(calls, 0);
+    r = await getCityMap({ refresh: true }); // the warm-up always reloads
+    assert.strictEqual(r.map.source, 'zoho');
+    assert.strictEqual(r.map.cityForLead('shreya shreya', null, '2026-10-01'), 'Hosur');
+    r = await getCityMap(); // requests reuse the cached copy
+    assert.strictEqual(calls, 1);
+    assert.strictEqual(r.error, null);
+
+    axios.get = async () => { throw new Error('down'); };
+    r = await getCityMap({ refresh: true }); // reload fails: last good copy is kept
+    assert.strictEqual(r.map.source, 'zoho');
+    assert.match(r.error, /last loaded copy/);
+  } finally {
+    axios.get = realGet;
+    delete process.env.ZOHO_CITY_MAPPING_API;
+  }
+});

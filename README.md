@@ -43,8 +43,12 @@ to matter, the next step is to move the per-day spend + leads into DynamoDB/S3.
 Required: `ZOHO_API`, `FACEBOOK_ACCESS_TOKEN`, `FACEBOOK_AD_ACCOUNT_ID`, `GOOGLE_CLIENT_ID`,
 `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`, `GOOGLE_DEVELOPER_TOKEN`, `GOOGLE_CUSTOMER_TOKEN`.
 
+City mapping: `ZOHO_CITY_MAPPING_API` (REST API URL of the Zoho function `getCityMapping`; without it the
+built-in mapping is used) and `CITY_SETTINGS_URL` (the City Mappings module in Zoho CRM, shown as the
+"Settings" link next to the City filter). See `zoho/README.md`.
+
 Optional: `GST_RATE` (default `0.18`, added to Meta/Google spend), `CITY_OWNERS_JSON`, `CITY_CAMPAIGNS_JSON`
-(see `zoho/README.md`), `CORS_ORIGIN` (default `*`; set to the widget origin), `LEADS_TTL_MS`,
+(see `zoho/README.md`), `MAPPING_TTL_MS`, `CORS_ORIGIN` (default `*`; set to the widget origin), `LEADS_TTL_MS`,
 `LEADS_MAX_STALE_MS`, `SPEND_TTL_MS`, `SPEND_FINAL_AFTER_DAYS`, `ZOHO_TIMEOUT_MS`,
 `FACEBOOK_TIMEOUT_MS`, `GOOGLE_TIMEOUT_MS`, `GOOGLE_SPEND_RESOURCE` (`ad_group_ad` default;
 `customer` also counts Performance Max spend, but validate it first).

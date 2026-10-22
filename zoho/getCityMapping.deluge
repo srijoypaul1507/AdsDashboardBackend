@@ -1,0 +1,25 @@
+string standalone.getCityMapping()
+{
+// Returns the City Mapping rows (module "City Mappings") for the Marketing Dashboard backend:
+// {"rows":[{"assignee":"shreya shreya","city":"Bangalore","from":"2020-01-01"}, ...]}
+// Effective_From comes from the API as yyyy-MM-dd. Each row means "from this date, this user belongs to this city". Called every ~5 minutes.
+rows = list();
+for each  page in {1,2,3,4,5}
+{
+	records = zoho.crm.getRecords("City_Mappings",page,200);
+	for each  rec in records
+	{
+		assignee = rec.get("Assignee");
+		effective = rec.get("Effective_From");
+		if(assignee != null && effective != null && rec.get("City") != null)
+		{
+			rows.add({"assignee":assignee.get("name"),"city":rec.get("City"),"from":effective});
+		}
+	}
+	if(records.size() < 200)
+	{
+		break;
+	}
+}
+return {"rows":rows};
+}

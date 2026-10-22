@@ -3,8 +3,7 @@ var express = require('express');
 var bodyParser = require('body-parser');
 var morgan = require('morgan');
 const { buildLeadsResponse, countMeetings, spendByCity } = require('./lib/aggregate');
-const { CITIES, isCity } = require('./lib/cities');
-const { getZohoOutput, getSpend, warm } = require('./lib/data');
+const { getZohoOutput, getSpend, getCityMap, warm } = require('./lib/data');
 
 var expressApp = express();
 var port = process.env.PORT || 5000;
@@ -26,9 +25,10 @@ expressApp.get('/test', (req, res) => {
   res.send("test ping received!")
 })
 
-// Options for the widget's filters.
-expressApp.get('/app/config', (req, res) => {
-  res.json({ cities: CITIES, gstRate: GST_RATE });
+// Options for the widget's filters. `citySettingsUrl` opens the City Mapping module in Zoho CRM.
+expressApp.get('/app/config', async (req, res) => {
+  const { map } = await getCityMap();
+  res.json({ cities: map.cities, gstRate: GST_RATE, citySettingsUrl: process.env.CITY_SETTINGS_URL || null });
 });
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -46,13 +46,15 @@ function sendError(res, status, message) {
  * Ad-platform failures don't fail the request; they are reported in meta.errors
  * so the widget can show a warning instead of silently showing 0 spend.
  */
-async function loadDashboard({ startDate, endDate, meetingStartDate, meetingEndDate, city }) {
+async function loadDashboard({ startDate, endDate, meetingStartDate, meetingEndDate, city, cityMapping }) {
   const started = Date.now();
-  const [zoho, fb, google] = await Promise.all([
+  const [zoho, fb, google, mapping] = await Promise.all([
     getZohoOutput(),
     getSpend('facebook', startDate, endDate),
     getSpend('google', startDate, endDate),
+    cityMapping || getCityMap(),
   ]);
+  const cityMap = mapping.map;
 
   const data = buildLeadsResponse({
     leads: zoho.value.leads_data,
@@ -64,6 +66,7 @@ async function loadDashboard({ startDate, endDate, meetingStartDate, meetingEndD
     meetingEndDate,
     gstRate: GST_RATE,
     city,
+    cityMap,
   });
 
   const errors = {};
@@ -73,6 +76,7 @@ async function loadDashboard({ startDate, endDate, meetingStartDate, meetingEndD
   if (city && !(zoho.value.leads_data || []).some((l) => l.owner)) {
     errors.city = 'Lead owner is not available yet, so leads cannot be split by city.';
   }
+  if (mapping.error) errors.cityMapping = mapping.error;
 
   const meta = {
     startDate,
@@ -81,7 +85,8 @@ async function loadDashboard({ startDate, endDate, meetingStartDate, meetingEndD
     meetingEndDate: meetingEndDate || null,
     city: city || null,
     gstRate: GST_RATE,
-    spendByCity: spendByCity([...fb.rows, ...google.rows], startDate, endDate, GST_RATE),
+    spendByCity: spendByCity([...fb.rows, ...google.rows], startDate, endDate, GST_RATE, cityMap),
+    cityMapping: cityMap.source,
     leadsAsOf: new Date(zoho.fetchedAt).toISOString(),
     generatedAt: new Date().toISOString(),
     durationMs: Date.now() - started,
@@ -105,8 +110,11 @@ expressApp.get('/app/dashboard/:startDate/:endDate', async function (req, res) {
   if (!validDates(startDate, endDate) || (meetingFilter && !validDates(mstart, mend))) {
     return sendError(res, 400, 'Dates must be YYYY-MM-DD');
   }
-  if (city && !isCity(city)) {
-    return sendError(res, 400, `Unknown city. Use one of: ${CITIES.join(', ')}`);
+  const cityMapping = await getCityMap();
+  const cityMap = cityMapping.map;
+  const cityName = city ? cityMap.resolve(city) : undefined; // also accepts the old "Hossur"
+  if (city && !cityName) {
+    return sendError(res, 400, `Unknown city. Use one of: ${cityMap.cities.join(', ')}`);
   }
   try {
     const { data, zohoOutput, meta } = await loadDashboard({
@@ -114,11 +122,12 @@ expressApp.get('/app/dashboard/:startDate/:endDate', async function (req, res) {
       endDate,
       meetingStartDate: meetingFilter ? mstart : undefined,
       meetingEndDate: meetingFilter ? mend : undefined,
-      city,
+      city: cityName,
+      cityMapping,
     });
     const meetings = meetingFilter
-      ? countMeetings(zohoOutput, mstart, mend, city)
-      : countMeetings(zohoOutput, startDate, endDate, city);
+      ? countMeetings(zohoOutput, mstart, mend, cityName, cityMap)
+      : countMeetings(zohoOutput, startDate, endDate, cityName, cityMap);
     if (city && (zohoOutput.google_meetings_data || []).some((m) => typeof m === 'string')) {
       meta.errors.meetings = 'Meeting counts are not split by city yet (Zoho sends meeting dates without owner).';
     }

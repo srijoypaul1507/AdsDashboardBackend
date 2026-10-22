@@ -31,12 +31,31 @@ The backend matches cities on the lead owner. Two additions to the function's ou
 The backend accepts both the old and new formats, so this can be deployed before or after the backend.
 Until it's done, the City filter splits spend by campaign but warns that leads/meetings are not split.
 
-## Owner → city mapping
+## Owner → city mapping (Zoho CRM module "City Mappings")
 
-Default mapping is in `lib/cities.js`; override without a code change via the `CITY_OWNERS_JSON` env var:
+Admins maintain the mapping in Zoho CRM, module **City Mappings** (API name `City_Mappings`, Administrator
+profile only). Each record is one row: **Assignee** (Zoho user), **City** (Bangalore / Hyderabad / Hosur)
+and **Effective From** (date). A row means "from this date, this user's leads count for this city":
+
+* A lead takes the city of its assignee's latest row dated on or before the lead's **created date**.
+  Pankaj's web-form leads use the "Created By" user as the assignee.
+* A meeting follows its lead (the lead's created date decides, not the meeting date).
+* When someone moves city, add a new row with the move date; don't edit the old one. Older leads keep the
+  old city. One city can have any number of assignees.
+* Leads created before someone's first row count only under All Cities.
+* Someone with no rows at all keeps the built-in mapping in `lib/cities.js`. This covers inactive users
+  (Naveen, Sudeepthi), who can't be picked in a Zoho user field but whose old leads are Bangalore leads.
+* The city follows the lead's **current** owner: if old leads are reassigned in Zoho, they move with them.
+
+The Zoho function **getCityMapping** (`getCityMapping.deluge`, Standalone, REST API with API key) returns
+the rows. The backend reloads it on every warm-up (~5 min), so an edit shows on the dashboard within
+minutes. If it cannot be loaded, the last loaded copy is used (then the built-in mapping), and the response
+says so in `meta.errors.cityMapping`. `meta.cityMapping` says which one was used (`zoho` / `default`).
+
+The built-in mapping can be overridden without a code change via the `CITY_OWNERS_JSON` env var:
 
 ```json
-{"Bangalore":["Sudipti","Naveen","Shreya"],"Hyderabad":["Madhuri"],"Hossur":["<owner first name>"]}
+{"Bangalore":["Sudipti","Naveen","Shreya"],"Hyderabad":["Madhuri"],"Hosur":["<owner first name>"]}
 ```
 
 Campaign → city uses keywords in the campaign name (`CITY_CAMPAIGNS_JSON`). `meta.spendByCity` in every

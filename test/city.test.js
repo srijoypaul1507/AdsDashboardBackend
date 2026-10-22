@@ -11,7 +11,7 @@ test('owners map to cities by first name, case-insensitively', () => {
   assert.strictEqual(cityForOwner('sudeepthi sudeepthi'), 'Bangalore');
   assert.strictEqual(cityForOwner('shreya shreya'), 'Bangalore');
   assert.strictEqual(cityForOwner('Madhuri Nara'), 'Hyderabad');
-  assert.strictEqual(cityForOwner('Hosur IS'), 'Hossur');
+  assert.strictEqual(cityForOwner('Hosur IS'), 'Hosur');
   assert.strictEqual(cityForOwner('pankaj pankaj'), null);
   assert.strictEqual(cityForOwner('Someone Else'), null);
   assert.strictEqual(cityForOwner(null), null);
@@ -20,9 +20,9 @@ test('owners map to cities by first name, case-insensitively', () => {
 test('campaigns map to cities by keyword in the name', () => {
   assert.strictEqual(cityForCampaign('BLR | Search | 3BHK'), 'Bangalore');
   assert.strictEqual(cityForCampaign('Leads_Hyderabad_Oct'), 'Hyderabad');
-  assert.strictEqual(cityForCampaign('Hosur villas'), 'Hossur');
+  assert.strictEqual(cityForCampaign('Hosur villas'), 'Hosur');
   assert.strictEqual(cityForCampaign('Hyd_Search_Brand_PM'), 'Hyderabad');
-  assert.strictEqual(cityForCampaign("Hosur_Lead_Gen_Statics_Sep'26"), 'Hossur');
+  assert.strictEqual(cityForCampaign("Hosur_Lead_Gen_Statics_Sep'26"), 'Hosur');
   // untagged campaigns are Bangalore spend
   assert.strictEqual(cityForCampaign("Bizbucks_Lead_Gen_Infor Video Nov'25"), 'Bangalore');
   assert.strictEqual(cityForCampaign('Hydrangea project'), 'Bangalore'); // no partial-word match
@@ -84,7 +84,7 @@ test("Pankaj's leads are attributed to the Created By user; other leads to the o
   assert.strictEqual(cityForLead('pankaj pankaj', 'shreya shreya'), 'Bangalore');
   assert.strictEqual(cityForLead('Pankaj Verma', 'Pankaj Verma'), null); // still unassigned
   assert.strictEqual(cityForLead('Pankaj Verma', undefined), null);
-  assert.strictEqual(cityForLead('Hosur IS', 'Pankaj Verma'), 'Hossur'); // owner wins for others
+  assert.strictEqual(cityForLead('Hosur IS', 'Pankaj Verma'), 'Hosur'); // owner wins for others
   assert.strictEqual(cityForLead('Janardhan N', 'Janardhan N'), null);
 });
 
@@ -97,4 +97,85 @@ test('city filter uses Created By for Pankaj-owned leads', () => {
     googleSpend: [], facebookSpend: [], startDate: '2026-10-01', endDate: '2026-10-01', city: 'Hyderabad',
   });
   assert.strictEqual(r.facebook_leads, 1);
+});
+
+// ---------- Dated City Mapping from Zoho ----------
+const { createCityMap, DEFAULT_CITY_MAP } = require('../lib/cities');
+
+const mappingRows = [
+  { assignee: 'shreya shreya', city: 'Bangalore', from: '2020-01-01' },
+  { assignee: 'naveen naveen', city: 'Bangalore', from: '2020-01-01' },
+  { assignee: 'Madhuri Nara', city: 'Hyderabad', from: '2020-01-01' },
+  { assignee: 'Hosur IS', city: 'Hosur', from: '2020-01-01' },
+  { assignee: 'shreya shreya', city: 'Hosur', from: '2026-11-01' }, // Shreya moves on 1 Nov
+];
+
+test('dated mapping: a lead takes its assignee\'s city on the lead created date', () => {
+  const m = createCityMap(mappingRows);
+  assert.strictEqual(m.source, 'zoho');
+  assert.strictEqual(m.cityForLead('shreya shreya', null, '2026-10-31'), 'Bangalore');
+  assert.strictEqual(m.cityForLead('shreya shreya', null, '2026-11-01'), 'Hosur');
+  assert.strictEqual(m.cityForLead('Shreya  Shreya', null, '2026-12-15'), 'Hosur'); // case/spaces
+  assert.strictEqual(m.cityForLead('naveen naveen', null, '2026-12-15'), 'Bangalore'); // several per city
+  assert.strictEqual(m.cityForLead('madhuri nara', null, '2019-12-31'), null); // before the first row
+  assert.strictEqual(m.cityForLead('Someone Else', null, '2026-10-01'), null);
+  // no rows in Zoho (inactive users can't be picked there): built-in mapping still applies
+  assert.strictEqual(m.cityForLead('sudeepthi sudeepthi', null, '2026-10-01'), 'Bangalore');
+  // Pankaj's leads use Created By, on the lead's date
+  assert.strictEqual(m.cityForLead('Pankaj Verma', 'shreya shreya', '2026-10-01'), 'Bangalore');
+  assert.strictEqual(m.cityForLead('Pankaj Verma', 'shreya shreya', '2026-11-02'), 'Hosur');
+  assert.strictEqual(m.cityForLead('Pankaj Verma', 'Pankaj Verma', '2026-11-02'), null);
+});
+
+test('dated mapping: row order does not matter; bad rows are skipped; new cities are listed', () => {
+  const m = createCityMap([
+    { assignee: 'a b', city: 'Hyderabad', from: '2026-06-01' },
+    { assignee: 'a b', city: 'Bangalore', from: '2026-01-01' },
+    { assignee: 'c d', city: 'Chennai', from: '2026-01-01' },
+    { assignee: '', city: 'Bangalore', from: '2026-01-01' },
+    { assignee: 'e f', city: 'Bangalore', from: 'yesterday' },
+    { assignee: 'g h', city: 'Hossur', from: '2026-01-01' }, // old spelling → Hosur
+  ]);
+  assert.strictEqual(m.skipped, 2);
+  assert.strictEqual(m.cityForLead('a b', null, '2026-03-01'), 'Bangalore');
+  assert.strictEqual(m.cityForLead('a b', null, '2026-06-01'), 'Hyderabad');
+  assert.strictEqual(m.cityForLead('g h', null, '2026-03-01'), 'Hosur');
+  assert.deepStrictEqual(m.cities, ['Bangalore', 'Hyderabad', 'Hosur', 'Chennai']);
+  assert.strictEqual(m.cityForCampaign('Chennai_Leads_Nov'), 'Chennai');
+  assert.strictEqual(m.cityForCampaign('Bizbucks_Lead_Gen'), 'Bangalore');
+});
+
+test('no Zoho mapping = built-in mapping, unchanged; old "Hossur" is accepted', () => {
+  for (const rows of [null, [], [{ assignee: '', city: '', from: '' }]]) {
+    const m = createCityMap(rows);
+    assert.strictEqual(m.source, 'default');
+    assert.strictEqual(m.cityForLead('shreya shreya', null, '2026-10-01'), 'Bangalore');
+    assert.strictEqual(m.cityForLead('Hosur IS', null), 'Hosur');
+  }
+  assert.strictEqual(DEFAULT_CITY_MAP.resolve('Hossur'), 'Hosur');
+  assert.strictEqual(DEFAULT_CITY_MAP.resolve('hosur'), 'Hosur');
+  assert.strictEqual(DEFAULT_CITY_MAP.resolve('Delhi'), null);
+});
+
+test('dated mapping drives leads and meetings: Shreya\'s move keeps October in Bangalore', () => {
+  const cityMap = createCityMap(mappingRows);
+  const leadsRows = [
+    { date: '2026-10-20', source: 'Meta Ads', mobile_len: 10, owner: 'shreya shreya' },
+    { date: '2026-11-05', source: 'Meta Ads', mobile_len: 10, owner: 'shreya shreya' },
+  ];
+  const args = { leads: leadsRows, googleSpend: [], facebookSpend: [], startDate: '2026-10-01', endDate: '2026-11-30', cityMap };
+  assert.strictEqual(buildLeadsResponse({ ...args, city: 'Bangalore' }).facebook_leads, 1);
+  assert.strictEqual(buildLeadsResponse({ ...args, city: 'Hosur' }).facebook_leads, 1);
+  assert.strictEqual(buildLeadsResponse(args).facebook_leads, 2);
+
+  // A November meeting on an October lead stays with the lead's city.
+  const out = {
+    facebook_meetings_data: [
+      { date: '2026-11-10', owner: 'shreya shreya', lead_date: '2026-10-20' },
+      { date: '2026-11-10', owner: 'shreya shreya', lead_date: '2026-11-05' },
+      { date: '2026-11-10', owner: 'shreya shreya' }, // older Zoho output: meeting date is used
+    ],
+  };
+  assert.strictEqual(countMeetings(out, '2026-11-01', '2026-11-30', 'Bangalore', cityMap).facebook_meeting, 1);
+  assert.strictEqual(countMeetings(out, '2026-11-01', '2026-11-30', 'Hosur', cityMap).facebook_meeting, 2);
 });
