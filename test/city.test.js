@@ -117,7 +117,8 @@ test('dated mapping: a lead takes its assignee\'s city on the lead created date'
   assert.strictEqual(m.cityForLead('shreya shreya', null, '2026-11-01'), 'Hosur');
   assert.strictEqual(m.cityForLead('Shreya  Shreya', null, '2026-12-15'), 'Hosur'); // case/spaces
   assert.strictEqual(m.cityForLead('naveen naveen', null, '2026-12-15'), 'Bangalore'); // several per city
-  assert.strictEqual(m.cityForLead('madhuri nara', null, '2019-12-31'), null); // before the first row
+  // before the first row: the built-in mapping applies
+  assert.strictEqual(m.cityForLead('madhuri nara', null, '2019-12-31'), 'Hyderabad');
   assert.strictEqual(m.cityForLead('Someone Else', null, '2026-10-01'), null);
   // no rows in Zoho (inactive users can't be picked there): built-in mapping still applies
   assert.strictEqual(m.cityForLead('sudeepthi sudeepthi', null, '2026-10-01'), 'Bangalore');

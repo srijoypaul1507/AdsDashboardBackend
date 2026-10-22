@@ -42,9 +42,10 @@ and **Effective From** (date). A row means "from this date, this user's leads co
 * A meeting follows its lead (the lead's created date decides, not the meeting date).
 * When someone moves city, add a new row with the move date; don't edit the old one. Older leads keep the
   old city. One city can have any number of assignees.
-* Leads created before someone's first row count only under All Cities.
-* Someone with no rows at all keeps the built-in mapping in `lib/cities.js`. This covers inactive users
-  (Naveen, Sudeepthi), who can't be picked in a Zoho user field but whose old leads are Bangalore leads.
+* When no row applies (someone with no rows, or a lead created before their first row), the built-in
+  mapping in `lib/cities.js` is used; people it doesn't know count only under All Cities. This covers
+  inactive users (Naveen, Sudeepthi), who can't be picked in a Zoho user field but whose old leads are
+  Bangalore leads.
 * The city follows the lead's **current** owner: if old leads are reassigned in Zoho, they move with them.
 
 The Zoho function **getCityMapping** (`getCityMapping.deluge`, Standalone, REST API with API key) returns
