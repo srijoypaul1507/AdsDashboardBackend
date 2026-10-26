@@ -46,7 +46,7 @@ function sendError(res, status, message) {
  * Ad-platform failures don't fail the request; they are reported in meta.errors
  * so the widget can show a warning instead of silently showing 0 spend.
  */
-async function loadDashboard({ startDate, endDate, meetingStartDate, meetingEndDate, city, cityMapping }) {
+async function loadDashboard({ startDate, endDate, meetingStartDate, meetingEndDate, city, cityMapping, dateBy }) {
   const started = Date.now();
   const [zoho, fb, google, mapping] = await Promise.all([
     getZohoOutput(),
@@ -67,6 +67,7 @@ async function loadDashboard({ startDate, endDate, meetingStartDate, meetingEndD
     gstRate: GST_RATE,
     city,
     cityMap,
+    dateBy,
   });
 
   const errors = {};
@@ -84,6 +85,7 @@ async function loadDashboard({ startDate, endDate, meetingStartDate, meetingEndD
     meetingStartDate: meetingStartDate || null,
     meetingEndDate: meetingEndDate || null,
     city: city || null,
+    dateBy: dateBy || 'lead',
     gstRate: GST_RATE,
     spendByCity: spendByCity([...fb.rows, ...google.rows], startDate, endDate, GST_RATE, cityMap),
     cityMapping: cityMap.source,
@@ -101,12 +103,15 @@ function handleFailure(res, err) {
 }
 
 // Single call used by the widget: lead/spend metrics + meeting counts + meta.
-// Optional ?mstart=&mend= filters leads by meeting date (the "Check Meetings" selector).
+// ?by=meeting: the dates are meeting done dates (the "Check Meetings" view) instead of lead
+// created dates. ?mstart=&mend= (older widgets) restricts a lead-date view to leads with a
+// meeting in that range.
 expressApp.get('/app/dashboard/:startDate/:endDate', async function (req, res) {
   const { startDate, endDate } = req.params;
   const { mstart, mend } = req.query;
   const city = req.query.city || undefined;
-  const meetingFilter = Boolean(mstart && mend);
+  const dateBy = req.query.by === 'meeting' ? 'meeting' : 'lead';
+  const meetingFilter = dateBy === 'lead' && Boolean(mstart && mend);
   if (!validDates(startDate, endDate) || (meetingFilter && !validDates(mstart, mend))) {
     return sendError(res, 400, 'Dates must be YYYY-MM-DD');
   }
@@ -124,6 +129,7 @@ expressApp.get('/app/dashboard/:startDate/:endDate', async function (req, res) {
       meetingEndDate: meetingFilter ? mend : undefined,
       city: cityName,
       cityMapping,
+      dateBy,
     });
     const meetings = meetingFilter
       ? countMeetings(zohoOutput, mstart, mend, cityName, cityMap)

@@ -96,3 +96,37 @@ test('Google = Lead Source "Google AdWords" with a valid mobile; Direct Call / n
   assert.strictEqual(r.google_qualified, 1);
   assert.strictEqual(r.socials_leads, 1);
 });
+
+test('meeting view: dates are meeting done dates, lead created date does not matter', () => {
+  const rows = [
+    // created long before the range, meeting inside it -> counts
+    { date: '2026-01-05', source: 'Meta Ads', mobile_len: 10, qs: 'Qualified', iss: 'Converted', converted: 'Converted', meetingdate: '2026-10-03' },
+    // created inside the range, no meeting -> not shown in the meeting view
+    { date: '2026-10-02', source: 'Meta Ads', mobile_len: 10, qs: 'Qualified', iss: 'First Call' },
+    // meeting outside the range
+    { date: '2026-10-01', source: 'Google AdWords', mobile_len: 10, iss: 'Meeting Done', meetingdate: '2026-11-01' },
+    // date-time meeting value from Zoho
+    { date: '2026-09-20', source: 'Google AdWords', mobile_len: 0, iss: 'Meeting Done', meetingdate: '2026-10-02T11:30:00+05:30' },
+  ];
+  const r = buildLeadsResponse({
+    leads: rows,
+    googleSpend: [{ date: '2026-10-02', cost: 100, clicks: 1 }, { date: '2026-09-30', cost: 999, clicks: 9 }],
+    facebookSpend: [{ date: '2026-10-03', cost: 50, clicks: 1 }],
+    startDate: '2026-10-01', endDate: '2026-10-03', dateBy: 'meeting',
+  });
+  assert.strictEqual(r.facebook_meetings_done, 1);
+  assert.strictEqual(r.google_meetings_done, 1); // counted even without a valid mobile
+  assert.strictEqual(r.facebook_leads, 0);       // no lead counts in the meeting view
+  assert.strictEqual(r.google_leads, 0);
+  assert.strictEqual(r.facebook_qualified, 1);
+  assert.strictEqual(r.facebook_converted, 1);
+  assert.deepStrictEqual(r.socials_meetingsData, [0, 1, 1]); // on the meeting dates
+  assert.strictEqual(r.socials_budget, 150);   // spend for the meeting range only
+  assert.strictEqual(r.cpm_socials, 75);
+});
+
+test('lead view is unchanged by default', () => {
+  const r = buildLeadsResponse({ leads, googleSpend, facebookSpend, startDate: '2026-10-01', endDate: '2026-10-03' });
+  const same = buildLeadsResponse({ leads, googleSpend, facebookSpend, startDate: '2026-10-01', endDate: '2026-10-03', dateBy: 'lead' });
+  assert.deepStrictEqual(r, same);
+});
