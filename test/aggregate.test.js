@@ -130,3 +130,25 @@ test('lead view is unchanged by default', () => {
   const same = buildLeadsResponse({ leads, googleSpend, facebookSpend, startDate: '2026-10-01', endDate: '2026-10-03', dateBy: 'lead' });
   assert.deepStrictEqual(r, same);
 });
+
+test('Others: every source outside the four tabs is counted under other, with no spend', () => {
+  const r = buildLeadsResponse({
+    leads: [
+      { date: '2026-10-01', source: 'Direct Call', mobile_len: 10, iss: 'Meeting Done', qs: 'Qualified', converted: 'Converted' },
+      { date: '2026-10-01', source: null, mobile_len: 10, qs: 'Future Qualified' },
+      { date: '2026-10-01', source: 'ERP Lead', mobile_len: 10 },
+      { date: '2026-10-01', source: 'EXPO', mobile_len: 3 },
+      { date: '2026-10-01', source: 'Google AdWords', mobile_len: 10 },
+    ],
+    googleSpend: [{ date: '2026-10-01', cost: 100, clicks: 1 }], facebookSpend: [],
+    startDate: '2026-10-01', endDate: '2026-10-01',
+  });
+  assert.strictEqual(r.other_leads, 3); // valid mobile only, like every source
+  assert.strictEqual(r.other_meetings_done, 1);
+  assert.strictEqual(r.other_qualified, 1);
+  assert.strictEqual(r.other_future_qualified, 1);
+  assert.strictEqual(r.other_converted, 1);
+  assert.strictEqual(r.other_budget, 0);
+  assert.strictEqual(r.google_leads, 1);       // Google stays AdWords only
+  assert.strictEqual(r.socials_leads, 1);      // Socials = Google + Meta, unchanged
+});
